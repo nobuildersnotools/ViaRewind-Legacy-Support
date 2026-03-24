@@ -19,6 +19,7 @@
 package com.viaversion.viarewind.legacysupport.versioninfo;
 
 import com.viaversion.viarewind.legacysupport.BukkitPlugin;
+import com.viaversion.viarewind.legacysupport.util.FoliaUtil;
 import com.viaversion.viaversion.api.Via;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -52,7 +53,7 @@ public class VersionInformer implements Listener {
                 ticks = 6000;
             }
 
-            Bukkit.getScheduler().runTaskTimer(plugin, () -> Bukkit.getOnlinePlayers().forEach(this::inform), ticks, ticks);
+            FoliaUtil.runGlobalTimer(plugin, () -> Bukkit.getOnlinePlayers().forEach(this::inform), ticks, ticks);
         }
     }
 

@@ -21,8 +21,8 @@ import com.viaversion.viarewind.legacysupport.BukkitPlugin;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
@@ -30,7 +30,7 @@ import java.util.logging.Level;
  */
 public class ReflectionUtil {
 
-    private static final Map<String, Field> fieldCache = new HashMap<>();
+    private static final Map<String, Field> fieldCache = new ConcurrentHashMap<>();
     private static boolean staticFinalModificationBlocked;
 
     static {

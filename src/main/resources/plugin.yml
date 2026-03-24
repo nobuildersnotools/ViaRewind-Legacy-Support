@@ -3,6 +3,7 @@ version: ${version}
 description: ${description}
 main: com.viaversion.viarewind.legacysupport.BukkitPlugin
 api-version: 1.13
+folia-supported: true
 
 authors: [EnZaXD, Gerrygames]
 website: https://github.com/ViaVersion/ViaRewind-Legacy-Support

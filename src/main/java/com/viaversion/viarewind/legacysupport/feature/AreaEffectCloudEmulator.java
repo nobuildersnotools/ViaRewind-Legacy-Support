@@ -19,11 +19,13 @@
 package com.viaversion.viarewind.legacysupport.feature;
 
 import com.viaversion.viarewind.legacysupport.BukkitPlugin;
+import com.viaversion.viarewind.legacysupport.util.FoliaUtil;
 import com.viaversion.viarewind.legacysupport.util.NMSUtil;
 import com.viaversion.viaversion.api.Via;
 import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -36,52 +38,68 @@ import org.bukkit.event.entity.LingeringPotionSplashEvent;
 
 @SuppressWarnings("unchecked")
 public class AreaEffectCloudEmulator implements Listener {
-    private final ArrayList<AreaEffectCloud> effectClouds = new ArrayList<>();
+    private final List<AreaEffectCloud> effectClouds = new CopyOnWriteArrayList<>();
+    private final BukkitPlugin plugin;
 
     public AreaEffectCloudEmulator(final BukkitPlugin plugin) {
-        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            final Set<Player> affectedPlayers = Bukkit.getOnlinePlayers().stream().filter(p -> Via.getAPI().getPlayerProtocolVersion(p).olderThanOrEqualTo(ProtocolVersion.v1_8)).collect(Collectors.toSet());
-            effectClouds.removeIf(e -> !e.isValid());
-            effectClouds.forEach(cloud -> {
-                final Location location = cloud.getLocation();
-                final float radius = cloud.getRadius();
-                final Object data = NMSUtil.NEWER_THAN_V1_20_5
-                    ? cloud.getColor()
-                    : null;
-
-                float area = (float) Math.PI * radius * radius;
-
-                for (int i = 0; i < area; i++) {
-                    float f1 = (float) Math.random() * 6.2831855F;
-                    float f2 = (float) Math.sqrt(Math.random()) * radius;
-                    float f3 = (float) Math.cos(f1) * f2;
-                    float f6 = (float) Math.sin(f1) * f2;
-
-                    if (cloud.getParticle() == Particle.SPELL_MOB) {
-                        final int color = cloud.getColor().asRGB();
-
-                        final int r = color >> 16 & 255;
-                        final int g = color >> 8 & 255;
-                        final int b = color & 255;
-
-                        affectedPlayers.stream().filter(player -> player.getWorld() == location.getWorld()).forEach(player -> {
-
-                            player.spawnParticle(
-                                cloud.getParticle(),
-                                location.getX() + f3, location.getY(), location.getZ() + f6,
-                                0,
-                                r / 255f, g / 255f, b / 255f,
-                                data
-                            );
-                        });
-                    }
-                }
-            });
-        }, 1L, 1L);
+        this.plugin = plugin;
+        if (!FoliaUtil.isFolia()) {
+            Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                final Set<Player> affectedPlayers = Bukkit.getOnlinePlayers().stream()
+                    .filter(p -> Via.getAPI().getPlayerProtocolVersion(p).olderThanOrEqualTo(ProtocolVersion.v1_8))
+                    .collect(Collectors.toSet());
+                effectClouds.removeIf(e -> !e.isValid());
+                effectClouds.forEach(cloud -> emitParticles(cloud, affectedPlayers));
+            }, 1L, 1L);
+        }
     }
 
     @EventHandler
     public void onEntitySpawn(LingeringPotionSplashEvent e) {
-        effectClouds.add(e.getAreaEffectCloud());
+        final AreaEffectCloud cloud = e.getAreaEffectCloud();
+        if (FoliaUtil.isFolia()) {
+            FoliaUtil.runEntityTimer(plugin, cloud, () -> {
+                if (!cloud.isValid()) return;
+                final Set<Player> affectedPlayers = cloud.getWorld().getPlayers().stream()
+                    .filter(p -> Via.getAPI().getPlayerProtocolVersion(p).olderThanOrEqualTo(ProtocolVersion.v1_8))
+                    .collect(Collectors.toSet());
+                emitParticles(cloud, affectedPlayers);
+            }, 1L, 1L);
+        } else {
+            effectClouds.add(cloud);
+        }
+    }
+
+    private void emitParticles(final AreaEffectCloud cloud, final Set<Player> affectedPlayers) {
+        final Location location = cloud.getLocation();
+        final float radius = cloud.getRadius();
+        final Object data = NMSUtil.NEWER_THAN_V1_20_5 ? cloud.getColor() : null;
+
+        float area = (float) Math.PI * radius * radius;
+
+        for (int i = 0; i < area; i++) {
+            float f1 = (float) Math.random() * 6.2831855F;
+            float f2 = (float) Math.sqrt(Math.random()) * radius;
+            float f3 = (float) Math.cos(f1) * f2;
+            float f6 = (float) Math.sin(f1) * f2;
+
+            if (cloud.getParticle() == Particle.SPELL_MOB) {
+                final int color = cloud.getColor().asRGB();
+
+                final int r = color >> 16 & 255;
+                final int g = color >> 8 & 255;
+                final int b = color & 255;
+
+                affectedPlayers.stream().filter(player -> player.getWorld() == location.getWorld()).forEach(player -> {
+                    player.spawnParticle(
+                        cloud.getParticle(),
+                        location.getX() + f3, location.getY(), location.getZ() + f6,
+                        0,
+                        r / 255f, g / 255f, b / 255f,
+                        data
+                    );
+                });
+            }
+        }
     }
 }

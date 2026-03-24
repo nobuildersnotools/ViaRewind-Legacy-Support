@@ -18,9 +18,9 @@
 package com.viaversion.viarewind.legacysupport.feature;
 
 import com.viaversion.viarewind.legacysupport.BukkitPlugin;
+import com.viaversion.viarewind.legacysupport.util.FoliaUtil;
 import com.viaversion.viarewind.legacysupport.util.NMSUtil;
 import java.util.logging.Level;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -35,13 +35,12 @@ public class AnvilCostFix implements Listener {
         Inventory inventory = event.getInventory();
 
         if (inventory instanceof AnvilInventory) {
-            Bukkit.getScheduler().runTaskLater(BukkitPlugin.getInstance(), () -> {
-                for (HumanEntity entity : inventory.getViewers()) {
-                    if (entity instanceof Player) {
-                        refreshAnvilInventoryPlayer((Player) entity);
-                    }
+            for (HumanEntity entity : inventory.getViewers()) {
+                if (entity instanceof Player) {
+                    final Player player = (Player) entity;
+                    FoliaUtil.runEntityDelayed(BukkitPlugin.getInstance(), player, () -> refreshAnvilInventoryPlayer(player), 1L);
                 }
-            }, 1L);
+            }
         }
     }
 
