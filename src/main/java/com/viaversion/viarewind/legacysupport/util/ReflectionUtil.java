@@ -80,8 +80,10 @@ public class ReflectionUtil {
             try {
                 field = clazz.getDeclaredField(fieldName);
             } catch (NoSuchFieldException ignored) {
-            } // Cache non-existing field too
-            fieldCache.put(key, field);
+            }
+            if (field != null) {
+                fieldCache.put(key, field);
+            }
             return field;
         }
     }

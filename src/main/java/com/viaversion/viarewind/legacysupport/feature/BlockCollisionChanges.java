@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.viaversion.viarewind.legacysupport.util.NMSUtil;
 import static com.viaversion.viarewind.legacysupport.util.NMSUtil.getNMSBlockClass;
 import static com.viaversion.viarewind.legacysupport.util.ReflectionUtil.getFieldAccessible;
 
@@ -37,7 +38,15 @@ public class BlockCollisionChanges {
 
     public static void fixLilyPad(final Logger logger, final ProtocolVersion serverVersion) {
         try {
-            final Field boundingBoxField = getFieldAccessible(getNMSBlockClass("BlockWaterLily"), serverVersion.olderThanOrEqualTo(ProtocolVersion.v1_20_2) ? "a" : "b");
+            Class<?> blockClass = NMSUtil.tryGetNMSBlockClass("LilyPadBlock");
+            if (blockClass == null) {
+                blockClass = getNMSBlockClass("BlockWaterLily");
+            }
+
+            Field boundingBoxField = getFieldAccessible(blockClass, "SHAPE");
+            if (boundingBoxField == null) {
+                boundingBoxField = getFieldAccessible(blockClass, serverVersion.olderThanOrEqualTo(ProtocolVersion.v1_20_2) ? "a" : "b");
+            }
 
             setBoundingBox(boundingBoxField.get(null), 0.0625, 0.0, 0.0625, 0.9375, 0.015625, 0.9375);
         } catch (Exception ex) {
@@ -49,8 +58,12 @@ public class BlockCollisionChanges {
         try {
             final Class<?> blockCarpetClass = serverVersion.olderThanOrEqualTo(ProtocolVersion.v1_16_4) ? getNMSBlockClass("BlockCarpet") : getNMSBlockClass("CarpetBlock");
 
-            final Field boundingBoxField = getFieldAccessible(blockCarpetClass, serverVersion.olderThanOrEqualTo(ProtocolVersion.v1_20_2) ? "a" : "b");
-            setBoundingBox(boundingBoxField.get(0), 0.0D, -0.0000001D, 0.0D, 1.0D, 0.0000001D, 1.0D);
+            Field boundingBoxField = getFieldAccessible(blockCarpetClass, "SHAPE");
+            if (boundingBoxField == null) {
+                boundingBoxField = getFieldAccessible(blockCarpetClass, serverVersion.olderThanOrEqualTo(ProtocolVersion.v1_20_2) ? "a" : "b");
+            }
+
+            setBoundingBox(boundingBoxField.get(null), 0.0D, -0.0000001D, 0.0D, 1.0D, 0.0000001D, 1.0D);
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Could not fix carpet bounding box.", ex);
         }
@@ -59,7 +72,10 @@ public class BlockCollisionChanges {
     public static void fixLadder(final Logger logger, final ProtocolVersion serverVersion) {
         try {
             if (serverVersion.newerThanOrEqualTo(ProtocolVersion.v1_20_5)) {
-                final Class<?> blockLadderClass = getNMSBlockClass("BlockLadder");
+                Class<?> blockLadderClass = NMSUtil.tryGetNMSBlockClass("LadderBlock");
+                if (blockLadderClass == null) {
+                    blockLadderClass = getNMSBlockClass("BlockLadder");
+                }
 
                 final Map<String, double[]> overrides = new HashMap<String, double[]>();
                 overrides.put("EAST", new double[]{0.0D, 0.0D, 0.0D, 0.125D, 1.0D, 1.0D});
@@ -67,6 +83,7 @@ public class BlockCollisionChanges {
                 overrides.put("SOUTH", new double[]{0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 0.125D});
                 overrides.put("NORTH", new double[]{0.0D, 0.0D, 0.875D, 1.0D, 1.0D, 1.0D});
 
+                Field shapesField = null;
                 Map<Object, Object> shapesMap = null;
                 for (Field field : blockLadderClass.getDeclaredFields()) {
                     if (!Modifier.isStatic(field.getModifiers())) {
@@ -79,6 +96,7 @@ public class BlockCollisionChanges {
                     final Object value = field.get(null);
                     if (value instanceof Map<?, ?>) {
                         @SuppressWarnings("unchecked") final Map<Object, Object> casted = (Map<Object, Object>) value;
+                        shapesField = field;
                         shapesMap = casted;
                         break;
                     }
@@ -91,6 +109,10 @@ public class BlockCollisionChanges {
 
                 if (!updated) {
                     updated = updateShapeConstants(blockLadderClass, overrides);
+                }
+
+                if (!updated) {
+                    updated = replaceImmutableShapesField(shapesField, overrides);
                 }
 
                 if (!updated) {
@@ -187,8 +209,12 @@ public class BlockCollisionChanges {
         // Handle Paper voxel shape caching by clearing the cache
         final Class<?> voxelShape = voxelShapeArray.getClass().getSuperclass();
 
-        final Field shape = getFieldAccessible(voxelShape, "a");
-        final Field cachedShapeData = getFieldAccessible(shape.getType(), "cachedShapeData");
+        // Field is "a" under Spigot obfuscated mappings, "shape" under Mojang mappings (Paper 1.20.5+)
+        Field shape = getFieldAccessible(voxelShape, "a");
+        if (shape == null) {
+            shape = getFieldAccessible(voxelShape, "shape");
+        }
+        final Field cachedShapeData = shape != null ? getFieldAccessible(shape.getType(), "cachedShapeData") : null;
         if (cachedShapeData == null) { // No Paper or too old version
             return;
         }
@@ -202,6 +228,52 @@ public class BlockCollisionChanges {
             throw new IllegalStateException("Could not find initCache method in " + voxelShape.getName());
         }
         initCache.invoke(voxelShapeArray);
+    }
+
+    private static boolean replaceImmutableShapesField(final Field shapesField, final Map<String, double[]> overrides) throws ReflectiveOperationException {
+        if (shapesField == null) return false;
+
+        final Class<?> directionClass = Class.forName("net.minecraft.core.Direction");
+        final Class<?> shapesClass = Class.forName("net.minecraft.world.phys.shapes.Shapes");
+        final Class<?> blockClass = Class.forName("net.minecraft.world.level.block.Block");
+
+        Method shapesBoxMethod = ReflectionUtil.findMethod(shapesClass, new String[]{"box", "a"}, double.class, double.class, double.class, double.class, double.class, double.class);
+        if (shapesBoxMethod != null) shapesBoxMethod.setAccessible(true);
+
+        Method blockBoxMethod = ReflectionUtil.findMethod(blockClass, new String[]{"box", "a"}, double.class, double.class, double.class, double.class, double.class, double.class);
+        if (blockBoxMethod != null) blockBoxMethod.setAccessible(true);
+
+        Method shapesCreateMethod = null;
+        Constructor<?> aabbConstructor = null;
+        if (shapesBoxMethod == null) {
+            final Class<?> aabbClass = Class.forName("net.minecraft.world.phys.AABB");
+            shapesCreateMethod = ReflectionUtil.findMethod(shapesClass, new String[]{"create", "a"}, aabbClass);
+            if (shapesCreateMethod != null) {
+                shapesCreateMethod.setAccessible(true);
+                aabbConstructor = aabbClass.getDeclaredConstructor(double.class, double.class, double.class, double.class, double.class, double.class);
+                aabbConstructor.setAccessible(true);
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        final Map<Object, Object> originalMap = (Map<Object, Object>) shapesField.get(null);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        final Map<Object, Object> newMap = new java.util.EnumMap(directionClass);
+        newMap.putAll(originalMap);
+
+        final Method directionValueOf = directionClass.getMethod("valueOf", String.class);
+        directionValueOf.setAccessible(true);
+
+        for (final Map.Entry<String, double[]> entry : overrides.entrySet()) {
+            final Object direction = directionValueOf.invoke(null, entry.getKey());
+            final Object voxelShape = createVoxelShape(shapesBoxMethod, blockBoxMethod, shapesCreateMethod, aabbConstructor, entry.getValue());
+            newMap.put(direction, voxelShape);
+        }
+
+        ReflectionUtil.removeFinal(shapesField);
+        shapesField.set(null, newMap);
+        return true;
     }
 
     private static boolean updateShapesMap(final Map<Object, Object> shapes, final Map<String, double[]> overrides) throws ReflectiveOperationException {

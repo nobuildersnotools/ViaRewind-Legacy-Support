@@ -56,6 +56,17 @@ public class NMSUtil {
         }
     }
 
+    public static Class<?> tryGetNMSBlockClass(final String name) {
+        if (BukkitPlugin.getInstance().getServerProtocol().newerThanOrEqualTo(ProtocolVersion.v1_17)) {
+            try {
+                return Class.forName("net.minecraft.world.level.block." + name);
+            } catch (ClassNotFoundException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public static Class getSoundCategoryClass() { // Bypass generics
         if (BukkitPlugin.getInstance().getServerProtocol().newerThanOrEqualTo(ProtocolVersion.v1_17)) {
             return failSafeGetClass("net.minecraft.sounds.SoundCategory");
